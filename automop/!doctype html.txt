@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AUTO-MOP — Strona o samochodach</title>
+  <meta name="description" content="Prosta responsywna strona o samochodach — lista modeli, filtrowanie, szczegóły i ulubione (localStorage)." />
+  <style>
+    :root{
+      --bg:#0f1724; --card:#0b1220; --accent:#1fb6ff; --muted:#98a0b3; --glass: rgba(255,255,255,0.04);
+      --radius:12px; --shadow: 0 6px 18px rgba(2,6,23,0.6);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Arial, Helvetica, sans-serif; background:linear-gradient(180deg,#071025 0%, #071129 60%); color:#e6eef8;}
+    .container{max-width:1100px;margin:32px auto;padding:20px}
+    header{display:flex;gap:18px;align-items:center;justify-content:space-between}
+    .brand{display:flex;gap:12px;align-items:center}
+    .logo{width:56px;height:56px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#6ee7b7);display:flex;align-items:center;justify-content:center;font-weight:700;color:#001;box-shadow:var(--shadow)}
+    h1{font-size:20px;margin:0}
+    p.lead{margin:0;color:var(--muted);font-size:14px}
+
+    .controls{display:flex;flex-wrap:wrap;gap:12px;margin:20px 0}
+    .search{flex:1;min-width:220px}
+    input,select,button{background:var(--card);border:1px solid rgba(255,255,255,0.04);padding:10px 12px;border-radius:10px;color:inherit}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), var(--glass));border-radius:var(--radius);padding:12px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:12px}
+    .thumb{height:150px;border-radius:10px;background-size:cover;background-position:center}
+    .meta{display:flex;justify-content:space-between;align-items:center;gap:8px}
+    .brand-name{font-weight:600}
+    .price{font-weight:700}
+    .tags{color:var(--muted);font-size:13px}
+    .actions{display:flex;gap:8px}
+    .btn{cursor:pointer;border:none;padding:8px 10px;border-radius:10px}
+    .btn.primary{background:var(--accent);color:#042033}
+    .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06)}
+
+    .modal-backdrop{position:fixed;inset:0;background:rgba(1,4,8,0.6);display:none;align-items:center;justify-content:center;padding:20px;z-index:50}
+    .modal{background:#071228;border-radius:12px;max-width:880px;width:100%;padding:18px}
+    .grid-2{display:grid;grid-template-columns:1fr 320px;gap:16px}
+    .specs{display:flex;flex-direction:column;gap:6px}
+
+    footer{margin-top:28px;color:var(--muted);font-size:13px;text-align:center}
+
+    @media (max-width:800px){
+      .grid-2{grid-template-columns:1fr}
+      .logo{width:48px;height:48px}
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <div class="logo">AH</div>
+        <div>
+          <h1>AUTO-MOP</h1>
+          <p class="lead">Katalog samochodów — wyszukaj, porównaj, zapisz ulubione.</p>
+        </div>
+      </div>
+      <div>
+        <button id="viewFav" class="btn ghost">Zobacz ulubione</button>
+      </div>
+    </header>
+
+    <div class="controls">
+      <input id="q" class="search" placeholder="Szukaj modelu, marki, rocznika..." />
+      <select id="filterBrand">
+        <option value="">Wszystkie marki</option>
+      </select>
+      <select id="sort">
+        <option value="newest">Najpierw nowe</option>
+        <option value="price-low">Cena rosnąco</option>
+        <option value="price-high">Cena malejąco</option>
+      </select>
+      <button id="clear" class="btn">Wyczyść</button>
+    </div>
+
+    <main>
+      <section id="list" class="grid" aria-live="polite"></section>
+    </main>
+
+    <footer>
+      Prosty szablon strony o samochodach • Zapis ulubionych w LocalStorage • Gotowe do publikacji na GitHub Pages
+    </footer>
+  </div>
+
+  <!-- Modal szczegółów -->
+  <div id="modalBackdrop" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal" id="modal">
+      <button id="closeModal" class="btn ghost" style="float:right">Zamknij</button>
+      <div id="modalContent"></div>
+    </div>
+  </div>
+
+  <script>
+    // ====== DANE (linki z sieci, działają na GitHub Pages bez dodatkowych zasobów) ======
+    const cars = [
+      {id:1,brand:'Toyota',model:'Supra',year:2020,price:349843,img:'https://images.unsplash.com/photo-1603730072286-0d6c0c6d4550?auto=format&fit=crop&w=1400&q=80',fuel:'Benzyna',desc:'Sportowy coupe, silnik 3.0, 335 KM.'},
+      {id:2,brand:'BMW',model:'M3',year:2021,price:429000,img:'https://images.unsplash.com/photo-1542362567-b07e54358753?auto=format&fit=crop&w=1400&q=80',fuel:'Benzyna',desc:'Dynamiczne osiągi, zawieszenie sportowe.'},
+      {id:3,brand:'Audi',model:'A6',year:2019,price:359000,img:'https://images.unsplash.com/photo-1542223616-1b2f5b0b0c15?auto=format&fit=crop&w=1400&q=80',fuel:'Diesel',desc:'Luksusowe wnętrze, wygodna limuzyna.'},
+      {id:4,brand:'Mercedes',model:'CLA',year:2024,price:250000,img:'https://hips.hearstapps.com/hmg-prod/images/2025-mercedes-amg-cla-class-103-67210b8abad43.jpg?crop=0.621xw:0.349xh;0.203xw,0.320xh&resize=1400:*',fuel:'Benzyna',desc:'Mocne osiągi i styl.'},
+      {id:5,brand:'Lamborghini',model:'Huracan',year:2022,price:1240000,img:'https://images.unsplash.com/photo-1549921296-3e4c3d8d9d2b?auto=format&fit=crop&w=1400&q=80',fuel:'Benzyna',desc:'Egzotyczny supersamochód.'},
+      {id:6,brand:'BMW',model:'X5',year:2023,price:380000,img:'https://images.unsplash.com/photo-1523986371872-9d3ba2e2f642?auto=format&fit=crop&w=1400&q=80',fuel:'Diesel',desc:'Nowoczesne SUV, wygoda podróży.'}
+    ];
+
+    // ====== ELEMENTY DOM ======
+    const listEl = document.getElementById('list');
+    const qEl = document.getElementById('q');
+    const filterBrand = document.getElementById('filterBrand');
+    const sortEl = document.getElementById('sort');
+    const clearBtn = document.getElementById('clear');
+    const modalBackdrop = document.getElementById('modalBackdrop');
+    const modalContent = document.getElementById('modalContent');
+    const closeModal = document.getElementById('closeModal');
+    const viewFav = document.getElementById('viewFav');
+
+    // ====== LocalStorage: ulubione ======
+    function getFav(){ try { return JSON.parse(localStorage.getItem('automop_fav')||'[]'); } catch(e){ return []; } }
+    function saveFav(arr){ localStorage.setItem('automop_fav', JSON.stringify(arr)); }
+    function toggleFav(id){
+      const fav = new Set(getFav());
+      if(fav.has(id)) fav.delete(id); else fav.add(id);
+      saveFav(Array.from(fav));
+      applyFilters();
+    }
+
+    // ====== Populate brands ======
+    function populateBrands(){
+      const brands = Array.from(new Set(cars.map(c=>c.brand))).sort();
+      for(const b of brands){
+        const opt = document.createElement('option'); opt.value=b; opt.textContent=b; filterBrand.appendChild(opt);
+      }
+    }
+
+    // ====== Render ======
+    function render(items=cars){
+      const fav = new Set(getFav());
+      listEl.innerHTML='';
+      if(items.length===0){ listEl.innerHTML='<p style="color:var(--muted)">Brak wyników.</p>'; return; }
+      for(const car of items){
+        const card = document.createElement('article'); card.className='card';
+        card.innerHTML = `
+          <div class="thumb" style="background-image:url('${car.img}')" aria-hidden="true"></div>
+          <div>
+            <div class="meta">
+              <div>
+                <div class="brand-name">${escapeHTML(car.brand)} ${escapeHTML(car.model)}</div>
+                <div class="tags">${car.year} • ${escapeHTML(car.fuel)}</div>
+              </div>
+              <div class="price">${numberFormat(car.price)} zł</div>
+            </div>
+            <p style="color:var(--muted);margin:8px 0">${escapeHTML(truncate(car.desc,90))}</p>
+            <div class="actions">
+              <button class="btn primary" data-id="${car.id}" data-action="details">Szczegóły</button>
+              <button class="btn ghost" data-id="${car.id}" data-action="fav">${fav.has(car.id)?'Usuń z ulubionych':'Dodaj do ulubionych'}</button>
+            </div>
+          </div>
+        `;
+        listEl.appendChild(card);
+      }
+    }
+
+    // ====== Utilities ======
+    function numberFormat(n){ return n.toLocaleString('pl-PL'); }
+    function truncate(s,n){ return s.length>n? s.slice(0,n-1)+'…':s; }
+    function escapeHTML(str){ return String(str).replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
+
+    // ====== Filtry i sortowanie ======
+    function applyFilters(){
+      const q = qEl.value.trim().toLowerCase();
+      const brand = filterBrand.value;
+      let items = cars.filter(c=>{
+        const hay = (c.brand+' '+c.model+' '+c.year+' '+c.fuel+' '+c.desc).toLowerCase();
+        return (!brand || c.brand===brand) && (!q || hay.includes(q));
+      });
+      const sort = sortEl.value;
+      if(sort==='newest') items.sort((a,b)=>b.year-a.year);
+      if(sort==='price-low') items.sort((a,b)=>a.price-b.price);
+      if(sort==='price-high') items.sort((a,b)=>b.price-a.price);
+      render(items);
+    }
+
+    // ====== Modal detali ======
+    function showDetails(id){
+      const car = cars.find(c=>c.id===id); if(!car) return;
+      modalContent.innerHTML = `
+        <div class="grid-2">
+          <div>
+            <img src="${car.img}" alt="${escapeHTML(car.brand)} ${escapeHTML(car.model)}" style="width:100%;border-radius:10px;max-height:420px;object-fit:cover">
+            <h2 style="margin:8px 0">${escapeHTML(car.brand)} ${escapeHTML(car.model)} — ${car.year}</h2>
+            <p style="color:var(--muted)">${escapeHTML(car.desc)}</p>
+            <div class="specs">
+              <div>Silnik: ${escapeHTML(car.fuel)}</div>
+              <div>Cena: ${numberFormat(car.price)} zł</div>
+              <div>ID: ${car.id}</div>
+            </div>
+          </div>
+          <aside style="background:transparent;padding-left:10px">
+            <h3>Szybkie akcje</h3>
+            <button class="btn primary" id="bookTest">Umów jazdę próbną</button>
+            <button class="btn ghost" id="contactSeller">Kontakt ze sprzedawcą</button>
+            <div style="margin-top:12px;color:var(--muted);font-size:13px">Możesz zapisać ten model w ulubionych i porównać go później.</div>
+          </aside>
+        </div>
+      `;
+      document.getElementById('bookTest').addEventListener('click', ()=>{ alert('Dziękujemy! Formularz jazdy próbnej — demo.'); });
+      document.getElementById('contactSeller').addEventListener('click', ()=>{ alert('Kontakt — wyślij maila: sprzedawca@automop.pl'); });
+      modalBackdrop.style.display = 'flex';
+    }
+
+    // ====== Delegacja zdarzeń dla kart ======
+    listEl.addEventListener('click', (e)=>{
+      const btn = e.target.closest('button'); if(!btn) return;
+      const id = Number(btn.dataset.id);
+      const action = btn.dataset.action;
+      if(action==='details') showDetails(id);
+      if(action==='fav') toggleFav(id);
+    });
+
+    // ====== Zamykanie modalu ======
+    closeModal.addEventListener('click', ()=>{ modalBackdrop.style.display='none'; });
+    modalBackdrop.addEventListener('click', (e)=>{ if(e.target===modalBackdrop) modalBackdrop.style.display='none'; });
+
+    // ====== Kontrolki ======
+    qEl.addEventListener('input', applyFilters);
+    filterBrand.addEventListener('change', applyFilters);
+    sortEl.addEventListener('change', applyFilters);
+    clearBtn.addEventListener('click', ()=>{ qEl.value=''; filterBrand.value=''; sortEl.value='newest'; applyFilters(); });
+    viewFav.addEventListener('click', ()=>{
+      const fav = new Set(getFav());
+      const items = cars.filter(c=>fav.has(c.id));
+      render(items);
+    });
+
+    // ====== Init ======
+    populateBrands();
+    applyFilters();
+  </script>
+</body>
+</html>
